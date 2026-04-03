@@ -10,32 +10,27 @@ import os
 import sys
 
 from transformers import AutoTokenizer, AutoModelForCausalLM
-# 假设 rank.py 和 metrics.py 在当前目录下
 from rank import get_rank
 from metrics import get_roc_metrics
 
-# 配置日志
 logging.basicConfig(
     level=logging.INFO, 
     format="%(asctime)s %(levelname)s %(message)s",
     handlers=[logging.StreamHandler(sys.stdout)]
 )
 
-# ===================== 数据集格式兼容加载 =====================
 def load_data_flexible(path):
     logging.info(f"正在读取文件: {path}")
     with open(path, "r", encoding="utf-8") as f:
         raw_data = json.load(f)
     
     test_data = []
-    # 兼容格式1: {"original": [...], "sampled": [...]}
     if isinstance(raw_data, dict) and "original" in raw_data:
         logging.info("检测到字典格式数据集，正在进行平铺转换...")
         for t in raw_data["original"]:
             test_data.append({"text": t, "label": "human"})
         for t in raw_data["sampled"]:
             test_data.append({"text": t, "label": "llm"})
-    # 兼容格式2: 普通列表
     elif isinstance(raw_data, list):
         test_data = raw_data
     else:
@@ -55,13 +50,10 @@ def get_processed_texts(out_path):
                     continue
     return processed
 
-# ===================== 主实验逻辑 =====================
 def experiment(args):
-    # 1. 加载模型
     logging.info(f"正在加载模型: {args.base_model}...")
     tokenizer = AutoTokenizer.from_pretrained(args.base_model)
     
-    # 针对 GPT-Neo/GPT-2 等模型修复 Pad Token
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
         
@@ -71,10 +63,8 @@ def experiment(args):
     for filename in filenames:
         logging.info(f"处理文件: {filename}")
         
-        # 2. 加载数据
         test_data = load_data_flexible(filename)
         
-        # 3. 准备流式输出（断点续传）
         output_stream = filename.split(".json")[0] + "_rank_stream.jsonl"
         processed_set = get_processed_texts(output_stream)
         logging.info(f"续传检查: 已处理 {len(processed_set)} 条。")
@@ -85,15 +75,11 @@ def experiment(args):
         torch.manual_seed(args.seed)
         np.random.seed(args.seed)
 
-        # 4. 主循环：计算 Rank 分数
-        # 注意：机器生成的文本通常 Rank 较小（更符合模型预期），
-        # 原代码中使用 -get_rank 使其变为：分数越高越像机器。
         for item in tqdm.tqdm(test_data, desc="Evaluating Rank"):
             if item["text"] in processed_set:
                 continue
 
             text = item["text"]
-            # get_rank 计算文本的平均排名
             rank_val = get_rank(text, args, tokenizer, model, log=False)
             score = -rank_val if rank_val is not None else -1e9
 
@@ -108,7 +94,6 @@ def experiment(args):
 
         fout.close()
 
-        # 5. 后处理：计算 ROC 与 正确性序列
         logging.info("正在从流文件计算最终指标...")
         final_data = []
         human_scores = []
@@ -123,11 +108,9 @@ def experiment(args):
                 else:
                     llm_scores.append(data["text_rank_score"])
 
-        # 计算 ROC 和 最佳阈值
         res_metrics = get_roc_metrics(human_scores, llm_scores)
         roc_auc, optimal_threshold, conf_matrix, precision, recall, f1, accuracy = res_metrics[:7]
 
-        # 生成 0,1 正确性序列
         correctness_sequence = []
         for item in final_data:
             score = item["text_rank_score"]
@@ -140,7 +123,6 @@ def experiment(args):
 
         seq_as_str = "".join(map(str, correctness_sequence))
         
-        # 6. 保存最终结果
         result = {
             "roc_auc": roc_auc,
             "optimal_threshold": optimal_threshold,
@@ -154,11 +136,9 @@ def experiment(args):
 
         logging.info(f"结果: AUC={roc_auc:.4f}, ACC={accuracy:.4f}")
 
-        # 详细数据 JSON
         with open(filename.split(".json")[0] + "_rank_data.json", "w", encoding="utf-8") as f:
             json.dump(final_data, f, indent=4, ensure_ascii=False)
 
-        # 统计结果 JSON
         with open(filename.split(".json")[0] + "_rank_result.json", "w", encoding="utf-8") as f:
             json.dump(result, f, indent=4, ensure_ascii=False)
 

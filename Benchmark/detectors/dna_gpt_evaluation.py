@@ -15,7 +15,6 @@ from metrics import get_roc_metrics
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
-# ===================== 核心算法辅助函数 =====================
 
 def clean_text(text):
     text = re.sub(r'\n', r'', text)
@@ -71,13 +70,9 @@ def get_log_probs(texts, args, base_tokenizer, base_model):
         return torch.tensor([])
     return torch.cat(batch_lprobs, dim=0)
 
-# ===================== 再生 (Regeneration) 逻辑 =====================
 
 def _sample_from_model(texts, args, tokenizer, model, truncate_ratio=0.5):
-    """
-    DNA-GPT 的核心：截断文本并让模型续写
-    """
-    # 简单的截断逻辑
+
     truncated_texts = []
     target_word_counts = []
     
@@ -89,7 +84,6 @@ def _sample_from_model(texts, args, tokenizer, model, truncate_ratio=0.5):
         truncated_text = ' '.join(words[: int(n_words * truncate_ratio)])
         truncated_texts.append(truncated_text)
 
-    # --- 关键修复点：此时 tokenizer 必须已有 pad_token ---
     all_encoded = tokenizer(truncated_texts, return_tensors="pt", padding=True, truncation=True, max_length=1024).to(args.DEVICE)
 
     sampling_kwargs = {'temperature': args.temperature}
@@ -98,7 +92,6 @@ def _sample_from_model(texts, args, tokenizer, model, truncate_ratio=0.5):
     elif args.do_top_k:
         sampling_kwargs['top_k'] = args.top_k
 
-    # 生成
     with torch.no_grad():
         outputs = model.generate(
             **all_encoded, 
@@ -112,7 +105,6 @@ def _sample_from_model(texts, args, tokenizer, model, truncate_ratio=0.5):
     
     decoded = tokenizer.batch_decode(outputs, skip_special_tokens=True)
 
-    # 后处理
     final_outputs = []
     for i, text in enumerate(decoded):
         text = clean_text(text)
@@ -132,8 +124,6 @@ def get_regen_samples(text, args, tokenizer, model):
         sampled_texts.extend(batch_output)
         
     return sampled_texts
-
-# ===================== 文件 IO 工具 =====================
 
 def load_data_flexible(path):
     with open(path, 'r', encoding='utf-8') as f:
@@ -161,14 +151,11 @@ def get_processed_indices(out_path):
                     continue
     return processed
 
-# ===================== 主程序 =====================
-
 def experiment(args):
     # 1. 加载模型与 Tokenizer
     logging.info(f"Loading base model: {args.base_model}...")
     base_tokenizer = AutoTokenizer.from_pretrained(args.base_model)
     
-    # --- 修复核心：立即设置 Pad Token ---
     if base_tokenizer.pad_token is None:
         base_tokenizer.pad_token = base_tokenizer.eos_token
         logging.info("Set base_tokenizer.pad_token to eos_token")
@@ -184,7 +171,6 @@ def experiment(args):
         logging.info(f"Loading regen model: {args.regen_model}...")
         regen_tokenizer = AutoTokenizer.from_pretrained(args.regen_model)
         
-        # --- 修复核心：regen_tokenizer 也要设置 ---
         if regen_tokenizer.pad_token is None:
             regen_tokenizer.pad_token = regen_tokenizer.eos_token
             logging.info("Set regen_tokenizer.pad_token to eos_token")
@@ -196,10 +182,8 @@ def experiment(args):
     for filename in filenames:
         logging.info(f"Processing file: {filename}")
         
-        # 2. 加载数据
         test_data = load_data_flexible(filename)
         
-        # 3. 准备流式输出
         output_stream = filename.split(".json")[0] + "_dna_gpt_stream.jsonl"
         processed_set = get_processed_indices(output_stream)
         logging.info(f"Resuming: {len(processed_set)} items already processed.")
@@ -210,22 +194,18 @@ def experiment(args):
         torch.manual_seed(args.seed)
         np.random.seed(args.seed)
 
-        # 4. 主循环
         for item in tqdm.tqdm(test_data, desc="DNA-GPT Pipeline"):
             if item["text"] in processed_set:
                 continue
 
             text = item["text"]
             
-            # Step A: 再生
             if "regen_text" not in item:
-                # 此时传入的 regen_tokenizer 已经具备 pad_token，不会再报错
                 regens = get_regen_samples(text, args, regen_tokenizer, regen_model)
                 item["regen_text"] = regens
             else:
                 regens = item["regen_text"]
 
-            # Step B: 打分
             lprob = get_log_prob(text, args, base_tokenizer, base_model)
             lprob_regens = get_log_probs(regens, args, base_tokenizer, base_model)
             
@@ -244,7 +224,6 @@ def experiment(args):
 
         fout.close()
 
-        # 5. 后处理
         logging.info("Calculating metrics from stream file...")
         final_data = []
         human_scores = []

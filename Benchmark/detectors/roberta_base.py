@@ -10,13 +10,11 @@ import os
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 from sklearn.metrics import precision_recall_fscore_support
 
-# 引用 metrics.py 中的函数
 try:
     from metrics import get_roc_metrics
 except ImportError:
     logging.error("无法找到 metrics.py，请确保该文件在当前目录下。")
 
-# 配置日志
 logging.basicConfig(
     level=logging.INFO, 
     format="%(asctime)s %(levelname)s %(message)s",
@@ -24,9 +22,7 @@ logging.basicConfig(
 )
 
 def load_data_local(path):
-    """
-    加载数据。
-    """
+
     logging.info(f"正在读取文件: {path}")
     try:
         with open(path, "r", encoding="utf-8") as f:
@@ -39,7 +35,7 @@ def load_data_local(path):
         sys.exit(1)
 
 def experiment(args):
-    # 1. 加载模型
+
     logging.info(f"正在加载监督模型: {args.base_model}...")
     try:
         detector = AutoModelForSequenceClassification.from_pretrained(args.base_model).to(args.DEVICE)
@@ -50,7 +46,6 @@ def experiment(args):
         logging.error(f"模型加载失败: {e}")
         return
 
-    # 2. 加载数据并展平
     data = load_data_local(args.test_data_path)
     
     evaluation_queue = []
@@ -59,7 +54,6 @@ def experiment(args):
     for txt in data["sampled"]:
         evaluation_queue.append({"text": txt, "label": "llm", "true_id": 0})    # 0: Fake
 
-    # 3. 设置随机种子
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
     if torch.cuda.is_available():
@@ -72,7 +66,6 @@ def experiment(args):
     
     logging.info(f"开始逐条评估，共 {len(evaluation_queue)} 条文本...")
     
-    # 4. 执行评估循环
     for item in tqdm.tqdm(evaluation_queue, desc=f"Evaluating {args.base_model}"):
         text = item["text"]
         true_id = item["true_id"]
@@ -83,11 +76,9 @@ def experiment(args):
             outputs = detector(**tokenized)
             logits = outputs.logits
             
-            # 对于 roberta-openai-detector: index 0 = Fake, index 1 = Real
             pred_id = logits.argmax(-1).item()
             fake_prob = logits.softmax(-1)[0, 0].item()
         
-        # 记录预测结果
         all_labels.append(true_id)
         all_preds.append(pred_id)
         
@@ -102,8 +93,6 @@ def experiment(args):
             "is_correct": bool(is_correct)
         })
 
-    # 5. 计算指标
-    # 计算 ROC AUC
     predictions_scores = {
         'human': [x["text_ll"] for x in test_data if x["label"] == "human"],
         'llm': [x["text_ll"] for x in test_data if x["label"] == "llm"]
@@ -115,10 +104,8 @@ def experiment(args):
     except Exception:
         pass
 
-    # 计算 Precision, Recall, F1 (针对 human 类别，即 label=1)
     precision, recall, f1, _ = precision_recall_fscore_support(all_labels, all_preds, average='binary', pos_label=1)
 
-    # 6. 整理并保存结果
     seq_as_str = "".join(map(str, correctness_sequence))
     
     result_summary = {
@@ -130,7 +117,6 @@ def experiment(args):
         "correctness_sequence": seq_as_str
     }
 
-    # 结果输出路径处理
     input_path = args.test_data_path
     base_name = input_path[:-5] if input_path.endswith(".json") else input_path
     data_out = f'{base_name}_roberta-base_data.json'

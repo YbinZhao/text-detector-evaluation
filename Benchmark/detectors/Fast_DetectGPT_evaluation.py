@@ -12,12 +12,8 @@ from tqdm import tqdm
 from metrics import get_roc_metrics
 from transformers import AutoTokenizer, AutoModelForCausalLM
 
-# 配置日志
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
-# ===========================
-# 核心算法部分 (保持不变)
-# ===========================
 def get_sampling_discrepancy_analytic(logits_ref, logits_score, labels):
     assert logits_ref.shape[0] == 1
     assert logits_score.shape[0] == 1
@@ -38,14 +34,12 @@ def get_sampling_discrepancy_analytic(logits_ref, logits_score, labels):
     return discrepancy.item()
 
 def get_text_crit(text, args, model_config):
-    # Fast-DetectGPT 的核心计算逻辑
     tokenized = model_config["scoring_tokenizer"](text, return_tensors="pt", return_token_type_ids=False).to(args.DEVICE)
     labels = tokenized.input_ids[:, 1:]
     
     with torch.no_grad():
         logits_score = model_config["scoring_model"](**tokenized).logits[:, :-1]
         
-        # 如果模型相同，复用 logits 避免重复计算
         if args.reference_model == args.scoring_model:
             logits_ref = logits_score
         else:
@@ -56,11 +50,7 @@ def get_text_crit(text, args, model_config):
         text_crit = get_sampling_discrepancy_analytic(logits_ref, logits_score, labels)
     return text_crit
 
-# ===========================
-# 辅助功能：续传检查
-# ===========================
 def get_processed_texts(out_path):
-    """读取已生成的 JSONL 记录，返回已处理的文本集合"""
     processed = set()
     if os.path.exists(out_path):
         with open(out_path, "r", encoding="utf-8") as f:
@@ -72,12 +62,7 @@ def get_processed_texts(out_path):
                     continue
     return processed
 
-# ===========================
-# 主流程
-# ===========================
 def experiment(args):
-    # 1. 加载模型
-    # Fast-DetectGPT 需要两个模型（Scoring 和 Reference），如果名称相同则物理上只加载一个
     logging.info(f"Loading scoring model: {args.scoring_model}...")
     scoring_tokenizer = AutoTokenizer.from_pretrained(args.scoring_model)
     scoring_model = AutoModelForCausalLM.from_pretrained(args.scoring_model).eval().to(args.DEVICE)
@@ -103,7 +88,6 @@ def experiment(args):
         logging.info(f"Processing file: {filename}")
         raw_data = json.load(open(filename, "r"))
 
-        # 2. 数据集兼容性处理 (Original/Sampled -> Flat List)
         test_data = []
         if isinstance(raw_data, dict) and "original" in raw_data:
             for text in raw_data["original"]:
@@ -111,9 +95,8 @@ def experiment(args):
             for text in raw_data["sampled"]:
                 test_data.append({"text": text, "label": "llm"})
         else:
-            test_data = raw_data # 假设已经是列表格式
+            test_data = raw_data
 
-        # 3. 准备实时输出流 (Streaming)
         output_jsonl = filename.split(".json")[0] + "_fast_stream.jsonl"
         processed_set = get_processed_texts(output_jsonl)
         logging.info(f"Resuming: {len(processed_set)} items already processed.")
@@ -124,34 +107,28 @@ def experiment(args):
         torch.manual_seed(args.seed)
         np.random.seed(args.seed)
 
-        # 4. 实时计算循环
         for item in tqdm(test_data, desc="Fast-DetectGPT Stream"):
             if item["text"] in processed_set:
                 continue
             
-            # 计算差异分数
             text_crit = get_text_crit(item["text"], args, model_config)
             
-            # 构造结果记录
             record = {
                 "text": item["text"],
                 "label": item["label"],
                 "text_crit": text_crit
             }
 
-            # 立即写入并刷新缓冲区
             fout.write(json.dumps(record, ensure_ascii=False) + "\n")
             fout.flush()
         
         fout.close()
 
-        # 5. 后处理：计算 ROC 和 0/1 序列
         logging.info("Calculating metrics from stream file...")
         final_data = []
         human_scores = []
         llm_scores = []
 
-        # 从文件中回读所有结果
         with open(output_jsonl, "r", encoding="utf-8") as f:
             for line in f:
                 try:
@@ -164,31 +141,25 @@ def experiment(args):
                 except:
                     continue
         
-        # 过滤无效分数
         human_scores = [i for i in human_scores if np.isfinite(i)]
         llm_scores = [i for i in llm_scores if np.isfinite(i)]
 
-        # 计算 ROC
         roc_auc, optimal_threshold, conf_matrix, precision, recall, f1, accuracy, tpr_001 = get_roc_metrics(
             human_scores, llm_scores)
 
-        # 生成 0/1 正确性序列
         correctness_sequence = []
         for item in final_data:
             score = item['text_crit']
-            # Fast-DetectGPT 逻辑：分数越高差异越大，越像 LLM
             prediction = "llm" if score >= optimal_threshold else "human"
             is_correct = 1 if prediction == item["label"] else 0
             
             correctness_sequence.append(is_correct)
             
-            # 将预测结果反写回 item 方便保存详细数据
             item["prediction"] = prediction
             item["is_correct"] = bool(is_correct)
 
         seq_as_str = "".join(map(str, correctness_sequence))
         logging.info(f"ROC_AUC: {roc_auc:.4f} | Accuracy: {accuracy:.4f}")
-        # print(f"Correctness Sequence: {seq_as_str}")
 
         result = {
             "roc_auc": roc_auc,
@@ -198,16 +169,13 @@ def experiment(args):
             "recall": recall,
             "f1": f1,
             "tpr_at_fpr_0_01": tpr_001,
-            "correctness_sequence": seq_as_str  # 你要求的 01 序列
+            "correctness_sequence": seq_as_str 
         }
 
-        # 6. 保存最终结果文件
-        # 保存详细数据 (包含 text, score, label, is_correct)
         data_output = filename.split(".json")[0] + "_Fast_DetectGPT_data.json"
         with open(data_output, "w", encoding="utf-8") as f:
             json.dump(final_data, f, indent=4, ensure_ascii=False)
 
-        # 保存统计指标 (包含 ROC 和 01 序列字符串)
         result_output = filename.split(".json")[0] + "_Fast_DetectGPT_result.json"
         with open(result_output, "w", encoding="utf-8") as f:
             json.dump(result, f, indent=4, ensure_ascii=False)
@@ -223,7 +191,6 @@ if __name__ == '__main__':
     parser.add_argument('--seed', default=2026, type=int, required=False)
     args = parser.parse_args()
 
-    # 兼容性处理
     if not hasattr(args, "DEVICE"):
         args.DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 

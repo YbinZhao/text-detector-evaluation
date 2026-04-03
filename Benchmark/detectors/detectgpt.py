@@ -15,20 +15,13 @@ from transformers import (
 import warnings
 warnings.filterwarnings("ignore")
 
-# ======================================================
-# 0. 全局配置
-# ======================================================
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 MAX_LEN = 512
 
-# DetectGPT 判决阈值（论文量级，工程中可再标定）
 DETECTGPT_THRESHOLD = 0.1   # score > threshold → machine
 
 ce_loss_fn = torch.nn.CrossEntropyLoss(reduction="none")
 
-# ======================================================
-# 1. HF cache → snapshot 解析（只给 base 模型用）
-# ======================================================
 def resolve_snapshot_path(hf_repo_dir: str) -> str:
     snapshots_dir = os.path.join(hf_repo_dir, "snapshots")
     if not os.path.isdir(snapshots_dir):
@@ -45,9 +38,6 @@ def resolve_snapshot_path(hf_repo_dir: str) -> str:
     snaps.sort(key=lambda p: os.path.getmtime(p), reverse=True)
     return snaps[0]
 
-# ======================================================
-# 2. DetectGPT：log-likelihood
-# ======================================================
 @torch.no_grad()
 def get_ll(text, tokenizer, model):
     enc = tokenizer(
@@ -74,9 +64,6 @@ def get_ll(text, tokenizer, model):
 def get_lls(texts, tokenizer, model):
     return [get_ll(t, tokenizer, model) for t in texts]
 
-# ======================================================
-# 3. DetectGPT 扰动（span infilling）
-# ======================================================
 def tokenize_and_mask(text, span_length, buffer_size, pct):
     tokens = text.split(" ")
     mask_string = "<<<mask>>>"
@@ -149,9 +136,6 @@ def perturb_text(
 
     return " ".join(tokens)
 
-# ======================================================
-# 4. 主流程
-# ======================================================
 def main(args):
     # -------- base 模型：只用本地 HF cache --------
     BASE_MODEL_PATH = resolve_snapshot_path(args.base_model_dir)
@@ -170,7 +154,6 @@ def main(args):
         local_files_only=True
     ).eval()
 
-    # -------- mask 模型：t5-small（自动下载） --------
     print("Loading mask model: t5-small (auto download if needed)")
     mask_tokenizer = AutoTokenizer.from_pretrained("t5-small")
     if mask_tokenizer.pad_token is None:
@@ -182,7 +165,6 @@ def main(args):
         device_map="auto"
     ).eval()
 
-    # -------- load data --------
     with open(args.input_json, "r", encoding="utf-8") as f:
         data = json.load(f)
 
@@ -234,16 +216,12 @@ def main(args):
 
     print(f"[OK] DetectGPT results saved to {args.output_json}")
 
-# ======================================================
-# 5. CLI
-# ======================================================
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
     parser.add_argument("--input_json", required=True)
     parser.add_argument("--output_json", required=True)
 
-    # base 模型：HF cache repo 目录（与你 FastDetectGPT 一致）
     parser.add_argument(
         "--base_model_dir",
         default=r"D:\cache\models--EleutherAI--gpt-neo-2.7B",

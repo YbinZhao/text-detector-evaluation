@@ -1,16 +1,4 @@
 # -*- coding: utf-8 -*-
-"""
-ChatGPT Detector Evaluation Script
-==================================
-
-支持：
-1. 输入 JSON 文件（包含 "original" 和 "sampled"）
-2. 输出两份结果：
-   - 每条文本预测数据
-   - 统计指标（ROC, Accuracy, Precision, Recall, F1, correctness_sequence）
-3. 自动根据输入文件名生成输出文件名
-"""
-
 import json
 import argparse
 import random
@@ -22,9 +10,6 @@ import logging
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
 from sklearn.metrics import roc_auc_score, precision_score, recall_score, f1_score
 
-# =========================
-# Utils
-# =========================
 def set_seed(seed):
     random.seed(seed)
     np.random.seed(seed)
@@ -32,9 +17,6 @@ def set_seed(seed):
     torch.cuda.manual_seed_all(seed)
 
 
-# =========================
-# Argument parser
-# =========================
 def get_args():
     parser = argparse.ArgumentParser(description="ChatGPT Detector Evaluation Script")
 
@@ -68,15 +50,9 @@ def get_args():
 
     return parser.parse_args()
 
-
-# =========================
-# Main function
-# =========================
 def main():
-    # --- 配置日志
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     
-    # --- 解析参数和设置随机种子
     args = get_args()
     set_seed(args.seed)
 
@@ -85,13 +61,11 @@ def main():
     )
     logging.info(f"使用设备: {device}")
 
-    # --- 加载模型
     tokenizer = AutoTokenizer.from_pretrained(args.base_model)
     model = AutoModelForSequenceClassification.from_pretrained(args.base_model)
     model.to(device)
     model.eval()
 
-    # --- 读取数据
     with open(args.test_data_path, "r", encoding="utf-8") as f:
         raw_data = json.load(f)
 
@@ -141,7 +115,6 @@ def main():
                 "prob_ai": prob_ai
             })
 
-    # --- 计算指标
     correctness_sequence = [int(p == t) for p, t in zip(y_pred, y_true)]
     seq_as_str = "".join(map(str, correctness_sequence))
 
@@ -160,21 +133,17 @@ def main():
         "correctness_sequence": seq_as_str
     }
 
-    # --- 输出文件命名
     input_path = args.test_data_path
     base_name = input_path[:-5] if input_path.endswith(".json") else input_path
     data_out = f'{base_name}_chatgpt-detector-roberta_data.json'
     res_out = f'{base_name}_chatgpt-detector-roberta_result.json'
 
-    # 保存详细预测数据
     with open(data_out, "w", encoding="utf-8") as f:
         json.dump(results, f, indent=4, ensure_ascii=False)
 
-    # 保存统计指标
     with open(res_out, "w", encoding="utf-8") as f:
         json.dump(result_summary, f, indent=4, ensure_ascii=False)
 
-    # --- 打印日志
     logging.info("-" * 50)
     logging.info(f"评估完成！统计指标如下:")
     logging.info(f"Accuracy : {accuracy:.4f}")
