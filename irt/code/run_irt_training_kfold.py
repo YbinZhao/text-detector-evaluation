@@ -78,9 +78,6 @@ def build_kfold_splits(n_samples, num_folds, shuffle=True, random_seed=42):
     return splits
 
 
-# =================================================
-# 1. Prepare data
-# =================================================
 os.makedirs(EXP_DIR, exist_ok=True)
 
 print("[1] Loading CSV...")
@@ -95,10 +92,6 @@ print("[2] Creating full-data IRT dataset...")
 create_irt_dataset(responses, DATASET_JSONL)
 assert os.path.exists(DATASET_JSONL)
 
-
-# =================================================
-# 2. Select best D using K-fold CV
-# =================================================
 print("[3] Selecting best dimension with K-fold CV...")
 assert len(CANDIDATE_DIMS) > 0, "CANDIDATE_DIMS must not be empty."
 
@@ -149,9 +142,6 @@ pd.DataFrame(dim_results).to_csv(cv_report, index=False)
 print("k-fold dimension report saved to:", cv_report)
 
 
-# =================================================
-# 3. Retrain final model on full data
-# =================================================
 print(f"[4] Training final IRT model with D={best_d} on full data...")
 train_irt_model(
     dataset_name=DATASET_JSONL,
@@ -163,9 +153,6 @@ train_irt_model(
 )
 
 
-# =================================================
-# 4. Load final parameters and export theta
-# =================================================
 print("[5] Loading final IRT parameters...")
 A, B, Theta = load_irt_parameters(MODEL_PREFIX)
 
