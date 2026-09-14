@@ -90,9 +90,9 @@ The study evaluates 14 representative detectors: 11 zero-shot or training-free m
 
 For detectors that return continuous scores, the detector-specific threshold is selected by maximizing the Youden index:
 
-$$
-\tau_l^* = \arg\max_{\tau}\{\operatorname{TPR}_l(\tau)-\operatorname{FPR}_l(\tau)\}.
-$$
+```math
+\tau_l^* = \underset{\tau}{\arg\max}\left[TPR_l(\tau)-FPR_l(\tau)\right].
+```
 
 The calibrated binary predictions are converted to correctness responses for the IRT analysis.
 
@@ -122,24 +122,23 @@ DetectGPT obtains the highest overall AUC, while LogRank obtains the highest F1 
 
 For text $i$ and detector $l$, let $Y_i$ be the ground-truth label and $D_{il}$ the detector prediction. The binary response is
 
-$$
-R_{il}=\mathbb{I}(D_{il}=Y_i),
-$$
+```math
+R_{il}=I(D_{il}=Y_i).
+```
 
 
 The paper uses a compensatory multidimensional 2PL-style model:
 
-$$
-P(R_{il}=1\mid\boldsymbol{\theta}_l,\boldsymbol{\alpha}_i,\boldsymbol{\beta}_i)
-=
-\frac{1}{1+\exp\{-\boldsymbol{\alpha}_i^\top(\boldsymbol{\theta}_l-\boldsymbol{\beta}_i)\}},
-$$
+```math
+P(R_{il}=1 \mid \mathbf{\theta}_l,\mathbf{\alpha}_i,\mathbf{\beta}_i)
+=\frac{1}{1+\exp\left[-\mathbf{\alpha}_i^T(\mathbf{\theta}_l-\mathbf{\beta}_i)\right]}.
+```
 
 where:
 
-- $\boldsymbol{\theta}_l$ is the multidimensional latent ability of detector $l$;
-- $\boldsymbol{\alpha}_i$ is the discrimination vector of text $i$;
-- $\boldsymbol{\beta}_i$ is the relative difficulty-location vector of text $i$.
+- $\mathbf{\theta}_l$ is the multidimensional latent ability of detector $l$;
+- $\mathbf{\alpha}_i$ is the discrimination vector of text $i$;
+- $\mathbf{\beta}_i$ is the relative difficulty-location vector of text $i$.
 
 The parameters are estimated with hierarchical Bayesian priors and variational inference. Posterior means are used as point estimates, followed by a post-estimation rotation to improve interpretability.
 
@@ -164,9 +163,9 @@ using five-fold cross-validation and validation binary cross-entropy. The paper 
 
 The paper represents each text with its estimated item parameters:
 
-$$
-E_i=(\hat{\boldsymbol{\alpha}}_i,\hat{\boldsymbol{\beta}}_i).
-$$
+```math
+E_i=(\hat{\mathbf{\alpha}}_i,\hat{\mathbf{\beta}}_i).
+```
 
 K-means is applied to these representations, and the texts closest to the cluster centers are selected as representatives. With $K=12$ and $n_i=174$, the compact benchmark contains **2,088 texts**, or **6.5%** of the full benchmark.
 
