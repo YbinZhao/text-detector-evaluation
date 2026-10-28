@@ -1,6 +1,6 @@
-# A Measurement Perspective on LLM-Generated Text Detection: An Item Response Theory Framework
+# A Measurement Perspective on Benchmarking LLM-Generated Text Detectors using Item Response Theory
 
-Official code, data, detector outputs, and estimated parameters for the paper **"A Measurement Perspective on LLM-Generated Text Detection: An Item Response Theory Framework."**
+Official code, data, detector outputs, and estimated parameters for the paper **"A Measurement Perspective on Benchmarking LLM-Generated Text Detectors using Item Response Theory"**
 
 **Authors:** Yanbin Zhao, Zhipeng Chen, Guangsheng Bao, Guandong Zhang, and Yan Li (corresponding author)
 
